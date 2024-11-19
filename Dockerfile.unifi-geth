@@ -1,0 +1,115 @@
+# Use amd64 base image for compatibility with gcc-multilib
+FROM --platform=linux/amd64 node:20.18.0-bullseye-slim AS builder
+
+# Install necessary packages
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    build-essential \
+    git \
+    openssl \
+    curl \
+    ca-certificates \
+    wget \
+    bash \
+    gcc-multilib \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+RUN curl -sL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz -o /usr/local/go1.22.5.linux-amd64.tar.gz && \
+  tar -C /usr/local/ -xzvf /usr/local/go1.22.5.linux-amd64.tar.gz
+ENV PATH "$PATH:/usr/local/go/bin"
+
+# Verify Go installation
+RUN go version
+
+# Install pnpm globally
+RUN npm install -g pnpm
+
+# Install Foundry
+RUN curl -L https://foundry.paradigm.xyz | bash
+ENV PATH="/root/.foundry/bin:${PATH}"
+
+# Install Foundry components
+RUN foundryup
+
+# Verify Foundry installation
+RUN forge --version
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the unifi-geth and unifi-mono source code into the container
+COPY unifi-geth/ /app/unifi-geth/
+COPY unifi-mono/ /app/unifi-mono/
+
+# Generate the JWT secret
+COPY jwt.txt /app/jwt.txt
+
+# Build unifi-geth
+WORKDIR /app/unifi-geth
+RUN make geth
+
+# Build the protocol contracts and generate genesis_alloc.json
+WORKDIR /app/unifi-mono/packages/protocol
+
+# Set Python path for pnpm and npm
+# RUN pnpm config set python /usr/bin/python3
+# RUN npm config set python /usr/bin/python3
+
+# Install dependencies and compile contracts
+RUN pnpm install
+RUN pnpm compile
+
+# Set environment variables
+ENV CONTRACT_OWNER=0x6282E3B5475Ad6d502917661bD3BeD8696Cf0d12
+ENV CHAIN_ID=167200
+ENV SEED_ACCOUNT=0x8943545177806ED17B9F23F0a21ee5948eCaa776
+ENV L1_CHAIN_ID=3151908
+ENV OWNER_SECURITY_COUNCIL=0x6282E3B5475Ad6d502917661bD3BeD8696Cf0d12
+ENV OWNER_TIMELOCK_CONTROLLER=0x6282E3B5475Ad6d502917661bD3BeD8696Cf0d12
+
+# Copy the template and replace placeholders
+COPY genesis_config_template.js /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js
+
+RUN sed -i 's|{{CONTRACT_OWNER}}|'"$CONTRACT_OWNER"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js && \
+    sed -i 's|{{CHAIN_ID}}|'"$CHAIN_ID"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js && \
+    sed -i 's|{{SEED_ACCOUNT}}|'"$SEED_ACCOUNT"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js && \
+    sed -i 's|{{L1_CHAIN_ID}}|'"$L1_CHAIN_ID"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js && \
+    sed -i 's|{{OWNER_SECURITY_COUNCIL}}|'"$OWNER_SECURITY_COUNCIL"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js && \
+    sed -i 's|{{OWNER_TIMELOCK_CONTROLLER}}|'"$OWNER_TIMELOCK_CONTROLLER"'|g' /app/unifi-mono/packages/protocol/test/genesis/data/genesis_config.js
+
+RUN pnpm genesis:gen
+
+# Copy the generated genesis_alloc.json to unifi-geth
+RUN cp /app/unifi-mono/packages/protocol/test/genesis/data/genesis_alloc.json /app/unifi-geth/core/taiko_genesis/unifi_l2.json
+
+# Expose necessary ports
+EXPOSE 8545 8546 8551
+
+# Set the command to run unifi-geth with the required flags
+CMD ["./build/bin/geth", \
+     "--taiko", \
+     "--networkid", "167200", \
+     "--gcmode", "archive", \
+     "--datadir", "./data/unifi-geth", \
+     "--metrics", \
+     "--metrics.expensive", \
+     "--metrics.addr", "0.0.0.0", \
+     "--http", \
+     "--http.api", "admin,debug,eth,net,web3,txpool,miner,taiko", \
+     "--http.addr", "0.0.0.0", \
+     "--http.port", "8545", \
+     "--http.corsdomain", "*", \
+     "--http.vhosts", "*", \
+     "--authrpc.addr", "0.0.0.0", \
+     "--authrpc.jwtsecret", "./app/jwt.txt", \
+     "--authrpc.port", "8551", \
+     "--authrpc.vhosts", "*", \
+     "--ws", \
+     "--ws.api", "admin,debug,eth,net,web3,txpool,miner,taiko", \
+     "--ws.addr", "0.0.0.0", \
+     "--ws.port", "8546", \
+     "--ws.origins", "*", \
+     "--gpo.defaultprice", "10000000", \
+     "--verbosity", "3"]

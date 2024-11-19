@@ -1,0 +1,16 @@
+additional_services:
+  - blockscout
+  - full_beaconchain_explorer
+port_publisher:
+  el:
+    enabled: true
+    public_port_start: 32000
+  cl:
+    enabled: true
+    public_port_start: 33000
+  vc:
+    enabled: true
+    public_port_start: 34000
+  additional_services:
+    enabled: true
+    public_port_start: 35000

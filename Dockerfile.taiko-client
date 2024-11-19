@@ -1,0 +1,29 @@
+# Base image with Node.js and Go installed
+FROM node:20.18.0-alpine
+
+# Install necessary packages
+RUN apk add --no-cache make gcc musl-dev linux-headers git openssl go bash jq
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the taiko-client source code into the container
+COPY unifi-mono/ /app/unifi-mono/
+
+# Copy the jwt.txt file
+COPY jwt.txt /app/jwt.txt
+
+# Copy the deploy_l1_contracts.sh script into the container
+COPY deploy_l1_contracts.sh /app/deploy_l1_contracts.sh
+
+# Make the script executable
+RUN chmod +x /app/deploy_l1_contracts.sh
+
+# Build taiko-client
+WORKDIR /app/unifi-mono/packages/taiko-client
+RUN make build
+
+# Expose any necessary ports (if any)
+
+# Set the entrypoint to run the deployment script before starting the client
+ENTRYPOINT ["/bin/sh", "-c", "/app/deploy_l1_contracts.sh && exec \"$@\""]
