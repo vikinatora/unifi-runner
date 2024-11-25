@@ -12,57 +12,56 @@ services:
       - ./data/unifi-geth:/app/data/unifi-geth
     networks:
       - unifi-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  
+  contract-deployer:
+    build:
+      context: .
+      dockerfile: Dockerfile.contract-deployer
+    container_name: contract-deployer
+    volumes:
+      - contract-data:/app/data
+    networks:
+      - unifi-network
+    depends_on:
+      - unifi-geth
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   taiko-driver:
     build:
       context: .
       dockerfile: Dockerfile.taiko-client
     container_name: taiko-driver
-    command: ["./bin/taiko-client", "driver", \
-              "--l1.ws", "ws://host.docker.internal:32003", \
-              "--l1.beacon", "http://host.docker.internal:33001", \
-              "--l2.ws", "ws://unifi-geth:8546", \
-              "--taikoL1", "${TAIKO_L1_ADDRESS}", \
-              "--taikoL2", "${TAIKO_L2_ADDRESS}", \
-              "--jwtSecret", "./jwt.txt", \
-              "--l2.auth", "http://unifi-geth:8551/", \
-              "--verbosity", "5"]
-    volumes:
-      - ./jwt.txt:/app/jwt.txt
-      - ./data/taiko-client:/app/data
-    env_file:
-      - ./data/taiko-client/contract_addresses.env
+    command: ["driver"]
     networks:
       - unifi-network
+    volumes:
+      - contract-data:/app/data
     depends_on:
-      - unifi-geth
+      - contract-deployer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   taiko-proposer:
     build:
       context: .
       dockerfile: Dockerfile.taiko-client
     container_name: taiko-proposer
-    command: ["./bin/taiko-client", "proposer", \
-              "--l1.ws", "ws://host.docker.internal:32003", \
-              "--l2.http", "http://unifi-geth:8545", \
-              "--l2.auth", "http://unifi-geth:8551", \
-              "--taikoL1", "${TAIKO_L1_ADDRESS}", \
-              "--taikoL2", "${TAIKO_L2_ADDRESS}", \
-              "--taikoToken", "${TAIKO_TOKEN_ADDRESS}", \
-              "--jwtSecret", "./jwt.txt", \
-              "--l1.proposerPrivKey", "0xc5114526e042343c6d1899cad05e1c00ba588314de9b96929914ee0df18d46b2", \
-              "--l2.suggestedFeeRecipient", "0xD8F3183DEF51A987222D845be228e0Bbb932C222", \
-              "--verbosity", "5"]
-    volumes:
-      - ./jwt.txt:/app/jwt.txt
-      - ./data/taiko-client:/app/data
-    env_file:
-      - ./data/taiko-client/contract_addresses.env
+    command: ["proposer"]
     networks:
       - unifi-network
+    volumes:
+      - contract-data:/app/data
     depends_on:
-      - unifi-geth
+      - contract-deployer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   unifi-network:
     driver: bridge
+
+volumes:
+  contract-data:

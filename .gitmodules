@@ -5,3 +5,4 @@
 [submodule "unifi-geth"]
 	path = unifi-geth
 	url = https://github.com/PufferFinance/unifi-geth.git
+	branch = unifi-runner
